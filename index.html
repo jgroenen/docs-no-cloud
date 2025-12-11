@@ -1091,7 +1091,10 @@
 
       if (messageType === 0) {
         Y.applyUpdate(doc, payload, remotePubkey);
-      } else if (messageType === 1) {
+      } 
+      // CURSOR MESSAGES DISABLED FOR TESTING
+      /*
+      else if (messageType === 1) {
         // Cursor message
         try {
           const cursorData = JSON.parse(new TextDecoder().decode(payload));
@@ -1102,6 +1105,7 @@
           console.warn('Invalid cursor message', e);
         }
       }
+      */
     }
 
     function syncFullState(remotePubkey) {
@@ -1134,7 +1138,7 @@
     function removePeer(remotePubkey) {
       const peer = peers.get(remotePubkey);
       if (!peer) return;
-
+// removeLiveCursor(remotePubkey); // DISABLED FOR TESTING
       peer.dataChannel?.close();
       peer.connection.close();
       peers.delete(remotePubkey);
@@ -1391,7 +1395,7 @@ ${content}
 
     editorEl.addEventListener('input', () => {
       syncEditorToYjs();
-      broadcastCursor();
+      // broadcastCursor(); // DISABLED FOR TESTING
     });
     
     // Track cursor movements
