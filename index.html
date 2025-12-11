@@ -554,6 +554,9 @@
       'wss://relay.damus.io',
       'wss://nos.lol', 
       'wss://relay.nostr.band',
+      'wss://nostr-pub.wellorder.net',
+      'wss://relay.current.fyi',
+      'wss://eden.nostr.land',
     ];
 
     const ICE_SERVERS = [
@@ -619,7 +622,10 @@
       
       if (connectedCount === 0) {
         statusDot.className = 'status-dot';
-        statusText.textContent = 'Alleen jij';
+        // Don't override network status messages
+        if (!statusText.textContent.includes('relays') && !statusText.textContent.includes('fout')) {
+          statusText.textContent = 'Alleen jij';
+        }
       } else {
         statusDot.className = 'status-dot connected';
         statusText.textContent = `${connectedCount + 1} gebruikers`;
@@ -811,12 +817,16 @@
         const successful = results.filter(r => r.status === 'fulfilled').length;
         console.log(`[Nostr] Presence announced to ${successful}/${DEFAULT_RELAYS.length} relays`);
         
-        if (successful === 0) {
+        // Update status if we have at least one working relay
+        if (successful > 0) {
+          statusText.textContent = `Verbonden (${successful} relays)`;
+        } else {
+          statusText.textContent = 'Geen netwerkverbinding';
           throw new Error('No relays available');
         }
       } catch (e) {
         console.warn('[Nostr] Failed to announce presence', e);
-        showToast('Verbinding met netwerk mislukt');
+        statusText.textContent = 'Netwerkfout';
       }
     }
 
@@ -931,10 +941,39 @@
       // Collision resolution: lower pubkey initiates
       if (pubkey > remotePubkey) {
         console.log(`[WebRTC] Waiting for ${remotePubkey.slice(0, 8)}... to initiate`);
+        
+        // Fallback: if no connection after 10 seconds, we initiate anyway
+        setTimeout(() => {
+          const peer = peers.get(remotePubkey);
+          if (!peer || !peer.connected) {
+            console.log(`[WebRTC] Timeout waiting for ${remotePubkey.slice(0, 8)}..., initiating anyway`);
+            forcePeerConnection(remotePubkey);
+          }
+        }, 10000);
         return;
       }
 
       console.log(`[WebRTC] Initiating connection to ${remotePubkey.slice(0, 8)}...`);
+      statusDot.className = 'status-dot connecting';
+
+      const pc = createPeerConnection(remotePubkey);
+      const dc = pc.createDataChannel('yjs', { ordered: true });
+      setupDataChannel(remotePubkey, dc);
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      await sendSignalingMessage(remotePubkey, {
+        type: 'offer',
+        documentId,
+        payload: offer,
+      });
+    }
+
+    async function forcePeerConnection(remotePubkey) {
+      if (peers.has(remotePubkey) && peers.get(remotePubkey).connected) return;
+      
+      console.log(`[WebRTC] Force-initiating connection to ${remotePubkey.slice(0, 8)}...`);
       statusDot.className = 'status-dot connecting';
 
       const pc = createPeerConnection(remotePubkey);
