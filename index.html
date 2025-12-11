@@ -539,10 +539,10 @@
 
   <script type="module">
     // ========================================================================
-    // Imports via CDN (ESM) - Fixed version compatibility
+    // Imports via CDN (ESM) - Using unpkg for better compatibility
     // ========================================================================
-    import * as Y from 'https://cdn.skypack.dev/yjs@13.6.18';
-    import { IndexeddbPersistence } from 'https://cdn.skypack.dev/y-indexeddb@9.0.12?deps=yjs@13.6.18';
+    import * as Y from 'https://unpkg.com/yjs@13.6.18/dist/yjs.js';
+    import { IndexeddbPersistence } from 'https://unpkg.com/y-indexeddb@9.0.12/dist/y-indexeddb.js';
     import * as nostrTools from 'https://cdn.jsdelivr.net/npm/nostr-tools@2.7.2/+esm';
 
     const { SimplePool, generateSecretKey, getPublicKey, finalizeEvent, nip04 } = nostrTools;
