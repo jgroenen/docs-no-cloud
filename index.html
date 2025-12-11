@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Docs P2P - Collaborative Editor</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg: #fafafa;
+      --bg-editor: #ffffff;
+      --text: #1a1a1a;
+      --text-muted: #666;
+      --border: #e5e5e5;
+      --accent: #0066cc;
+      --accent-hover: #0052a3;
+      --success: #22863a;
+      --warning: #b08800;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-editor);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 15px;
+    }
+
+    .logo svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    .doc-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .doc-id {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px;
+      color: var(--text-muted);
+      background: var(--bg);
+      padding: 6px 10px;
+      border-radius: 4px;
+    }
+
+    .btn {
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-secondary {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: var(--border);
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+      transition: background 0.3s ease;
+    }
+
+    .status-dot.connecting {
+      background: var(--warning);
+      animation: pulse 1.5s infinite;
+    }
+
+    .status-dot.connected {
+      background: var(--success);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    /* Main content */
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    /* Editor */
+    .editor-wrapper {
+      flex: 1;
+      background: var(--bg-editor);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .editor-toolbar {
+      display: flex;
+      gap: 4px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    .toolbar-btn {
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: transparent;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--text-muted);
+      transition: all 0.15s ease;
+    }
+
+    .toolbar-btn:hover {
+      background: var(--border);
+      color: var(--text);
+    }
+
+    .toolbar-btn.active {
+      background: var(--accent);
+      color: white;
+    }
+
+    .toolbar-divider {
+      width: 1px;
+      background: var(--border);
+      margin: 4px 8px;
+    }
+
+    .editor-content {
+      flex: 1;
+      padding: 24px 32px;
+      overflow-y: auto;
+    }
+
+    .editor-content:focus {
+      outline: none;
+    }
+
+    /* Editor content styling */
+    .editor-content h1 {
+      font-size: 28px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      line-height: 1.3;
+    }
+
+    .editor-content h2 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-top: 24px;
+      margin-bottom: 12px;
+      line-height: 1.3;
+    }
+
+    .editor-content h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-top: 20px;
+      margin-bottom: 8px;
+    }
+
+    .editor-content p {
+      margin-bottom: 12px;
+      line-height: 1.6;
+    }
+
+    .editor-content ul, .editor-content ol {
+      margin-bottom: 12px;
+      padding-left: 24px;
+    }
+
+    .editor-content li {
+      margin-bottom: 4px;
+      line-height: 1.6;
+    }
+
+    .editor-content code {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 14px;
+      background: var(--bg);
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .editor-content pre {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 16px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin-bottom: 12px;
+    }
+
+    .editor-content pre code {
+      background: transparent;
+      padding: 0;
+    }
+
+    .editor-content blockquote {
+      border-left: 3px solid var(--accent);
+      padding-left: 16px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .editor-content [data-placeholder]:empty::before {
+      content: attr(data-placeholder);
+      color: #aaa;
+      pointer-events: none;
+    }
+
+    /* Footer */
+    .footer {
+      padding: 16px 24px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+    }
+
+    .footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* Toast notifications */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--text);
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s ease;
+      pointer-events: none;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Loading state */
+    .loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 300px;
+      color: var(--text-muted);
+    }
+
+    .loading-spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 16px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Peers indicator */
+    .peers-avatars {
+      display: flex;
+      margin-left: 8px;
+    }
+
+    .peer-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid var(--bg-editor);
+      margin-left: -8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 600;
+      color: white;
+    }
+
+    .peer-avatar:first-child {
+      margin-left: 0;
+    }
+
+    /* Mobile */
+    @media (max-width: 640px) {
+      .header {
+        padding: 12px 16px;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .main {
+        padding: 16px;
+      }
+
+      .editor-content {
+        padding: 16px;
+      }
+
+      .doc-id {
+        font-size: 11px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+        <polyline points="14 2 14 8 20 8"></polyline>
+        <line x1="16" y1="13" x2="8" y2="13"></line>
+        <line x1="16" y1="17" x2="8" y2="17"></line>
+        <polyline points="10 9 9 9 8 9"></polyline>
+      </svg>
+      Docs P2P
+    </div>
+
+    <div class="doc-info">
+      <span class="doc-id" id="docId">#loading...</span>
+      <button class="btn btn-primary" id="shareBtn">
+        Link delen
+      </button>
+      <button class="btn btn-secondary" id="newDocBtn">
+        Nieuw document
+      </button>
+    </div>
+
+    <div class="status">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">Initialiseren...</span>
+      <div class="peers-avatars" id="peersAvatars"></div>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="editor-wrapper">
+      <div class="editor-toolbar">
+        <button class="toolbar-btn" data-action="bold" title="Vet (Ctrl+B)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path>
+            <path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path>
+          </svg>
+        </button>
+        <button class="toolbar-btn" data-action="italic" title="Cursief (Ctrl+I)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="19" y1="4" x2="10" y2="4"></line>
+            <line x1="14" y1="20" x2="5" y2="20"></line>
+            <line x1="15" y1="4" x2="9" y2="20"></line>
+          </svg>
+        </button>
+        <button class="toolbar-btn" data-action="underline" title="Onderstrepen (Ctrl+U)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M6 3v7a6 6 0 0 0 6 6 6 6 0 0 0 6-6V3"></path>
+            <line x1="4" y1="21" x2="20" y2="21"></line>
+          </svg>
+        </button>
+        <div class="toolbar-divider"></div>
+        <button class="toolbar-btn" data-action="h1" title="Kop 1">
+          <span style="font-weight:600;font-size:14px">H1</span>
+        </button>
+        <button class="toolbar-btn" data-action="h2" title="Kop 2">
+          <span style="font-weight:600;font-size:13px">H2</span>
+        </button>
+        <button class="toolbar-btn" data-action="h3" title="Kop 3">
+          <span style="font-weight:600;font-size:12px">H3</span>
+        </button>
+        <div class="toolbar-divider"></div>
+        <button class="toolbar-btn" data-action="ul" title="Opsomming">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="8" y1="6" x2="21" y2="6"></line>
+            <line x1="8" y1="12" x2="21" y2="12"></line>
+            <line x1="8" y1="18" x2="21" y2="18"></line>
+            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+          </svg>
+        </button>
+        <button class="toolbar-btn" data-action="ol" title="Genummerde lijst">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="10" y1="6" x2="21" y2="6"></line>
+            <line x1="10" y1="12" x2="21" y2="12"></line>
+            <line x1="10" y1="18" x2="21" y2="18"></line>
+            <path d="M4 6h1v4"></path>
+            <path d="M4 10h2"></path>
+            <path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"></path>
+          </svg>
+        </button>
+        <button class="toolbar-btn" data-action="quote" title="Citaat">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"></path>
+          </svg>
+        </button>
+        <button class="toolbar-btn" data-action="code" title="Code">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+          </svg>
+        </button>
+      </div>
+      
+      <div class="editor-content" id="editor" contenteditable="true" data-placeholder="Begin met typen..."></div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    Docs P2P — Lokaal-eerst, peer-to-peer samenwerken. 
+    Onderdeel van <a href="https://codefor.nl" target="_blank">Code for NL</a>.
+    <br>
+    Geen data in de cloud. Alles blijft op jouw apparaat.
+  </footer>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- Dependencies -->
+  <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.18/dist/yjs.cjs" type="module"></script>
+  <script type="module">
+    // ========================================================================
+    // Imports via CDN (ESM)
+    // ========================================================================
+    import * as Y from 'https://cdn.jsdelivr.net/npm/yjs@13.6.18/+esm';
+    import { IndexeddbPersistence } from 'https://cdn.jsdelivr.net/npm/y-indexeddb@9.0.12/+esm';
+    import * as nostrTools from 'https://cdn.jsdelivr.net/npm/nostr-tools@2.7.2/+esm';
+
+    const { SimplePool, generateSecretKey, getPublicKey, finalizeEvent, nip04 } = nostrTools;
+
+    // ========================================================================
+    // Constants
+    // ========================================================================
+    const DEFAULT_RELAYS = [
+      'wss://relay.damus.io',
+      'wss://nos.lol', 
+      'wss://relay.nostr.band',
+    ];
+
+    const ICE_SERVERS = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+    ];
+
+    const KIND_PRESENCE = 30078;
+    const KIND_ENCRYPTED_DM = 4;
+
+    // ========================================================================
+    // State
+    // ========================================================================
+    let doc;
+    let yText;
+    let provider;
+    let localPersistence;
+    let documentId;
+    
+    const peers = new Map();
+    let pool;
+    let secretKey;
+    let pubkey;
+    let subscriptions = [];
+    let presenceTimer;
+
+    // DOM elements
+    const editorEl = document.getElementById('editor');
+    const docIdEl = document.getElementById('docId');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const peersAvatars = document.getElementById('peersAvatars');
+    const shareBtn = document.getElementById('shareBtn');
+    const newDocBtn = document.getElementById('newDocBtn');
+    const toast = document.getElementById('toast');
+
+    // ========================================================================
+    // Utilities
+    // ========================================================================
+    function getDocumentId() {
+      let id = window.location.hash.slice(1);
+      if (!id || id.length < 8) {
+        id = crypto.randomUUID().replace(/-/g, '');
+        window.location.hash = id;
+      }
+      return id;
+    }
+
+    function showToast(message, duration = 3000) {
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), duration);
+    }
+
+    function updateStatus() {
+      const connectedCount = Array.from(peers.values()).filter(p => p.connected).length;
+      
+      if (connectedCount === 0) {
+        statusDot.className = 'status-dot';
+        statusText.textContent = 'Alleen jij';
+      } else {
+        statusDot.className = 'status-dot connected';
+        statusText.textContent = `${connectedCount + 1} gebruikers`;
+      }
+
+      // Update avatars
+      peersAvatars.innerHTML = '';
+      const colors = ['#e91e63', '#9c27b0', '#3f51b5', '#009688', '#ff5722', '#795548'];
+      
+      Array.from(peers.values())
+        .filter(p => p.connected)
+        .slice(0, 5)
+        .forEach((peer, i) => {
+          const avatar = document.createElement('div');
+          avatar.className = 'peer-avatar';
+          avatar.style.background = colors[i % colors.length];
+          avatar.textContent = peer.pubkey.slice(0, 2).toUpperCase();
+          peersAvatars.appendChild(avatar);
+        });
+    }
+
+    function generateColor(str) {
+      let hash = 0;
+      for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+      }
+      const hue = hash % 360;
+      return `hsl(${hue}, 65%, 50%)`;
+    }
+
+    // ========================================================================
+    // Yjs <-> Editor Sync
+    // ========================================================================
+    function syncEditorToYjs() {
+      const content = editorEl.innerHTML;
+      doc.transact(() => {
+        yText.delete(0, yText.length);
+        yText.insert(0, content);
+      }, 'local');
+    }
+
+    function syncYjsToEditor() {
+      const content = yText.toString();
+      if (editorEl.innerHTML !== content) {
+        // Save cursor position
+        const sel = window.getSelection();
+        let cursorOffset = 0;
+        if (sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0);
+          cursorOffset = range.startOffset;
+        }
+        
+        editorEl.innerHTML = content || '';
+        
+        // Restore cursor (simplified)
+        if (content && sel.rangeCount > 0) {
+          try {
+            const range = document.createRange();
+            const textNode = editorEl.firstChild;
+            if (textNode) {
+              range.setStart(textNode, Math.min(cursorOffset, textNode.length || 0));
+              range.collapse(true);
+              sel.removeAllRanges();
+              sel.addRange(range);
+            }
+          } catch (e) {
+            // Cursor restore failed, ignore
+          }
+        }
+      }
+    }
+
+    // ========================================================================
+    // Nostr Signaling
+    // ========================================================================
+    async function announcePresence() {
+      const event = finalizeEvent({
+        kind: KIND_PRESENCE,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['d', documentId],
+          ['t', `doc-${documentId}`],
+        ],
+        content: JSON.stringify({
+          type: 'join',
+          documentId,
+          pubkey,
+          timestamp: Date.now(),
+        }),
+      }, secretKey);
+
+      try {
+        await Promise.any(pool.publish(DEFAULT_RELAYS, event));
+        console.log('[Nostr] Presence announced');
+      } catch (e) {
+        console.warn('[Nostr] Failed to announce presence', e);
+      }
+    }
+
+    function subscribeToPresence() {
+      const filter = {
+        kinds: [KIND_PRESENCE],
+        '#d': [documentId],
+        since: Math.floor(Date.now() / 1000) - 120,
+      };
+
+      const sub = pool.subscribeMany(DEFAULT_RELAYS, [filter], {
+        onevent: (event) => handlePresenceEvent(event),
+      });
+
+      subscriptions.push({ close: () => sub.close() });
+    }
+
+    function handlePresenceEvent(event) {
+      if (event.pubkey === pubkey) return;
+
+      try {
+        const presence = JSON.parse(event.content);
+        if (presence.type === 'join' && !peers.has(event.pubkey)) {
+          console.log(`[Nostr] Peer discovered: ${event.pubkey.slice(0, 8)}...`);
+          initiatePeerConnection(event.pubkey);
+        }
+      } catch (e) {
+        console.warn('[Nostr] Invalid presence event');
+      }
+    }
+
+    function subscribeToSignaling() {
+      const filter = {
+        kinds: [KIND_ENCRYPTED_DM],
+        '#p': [pubkey],
+        since: Math.floor(Date.now() / 1000) - 120,
+      };
+
+      const sub = pool.subscribeMany(DEFAULT_RELAYS, [filter], {
+        onevent: async (event) => {
+          await handleSignalingEvent(event);
+        },
+      });
+
+      subscriptions.push({ close: () => sub.close() });
+    }
+
+    async function sendSignalingMessage(targetPubkey, message) {
+      try {
+        const encrypted = await nip04.encrypt(secretKey, targetPubkey, JSON.stringify(message));
+        
+        const event = finalizeEvent({
+          kind: KIND_ENCRYPTED_DM,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [['p', targetPubkey]],
+          content: encrypted,
+        }, secretKey);
+
+        await Promise.any(pool.publish(DEFAULT_RELAYS, event));
+      } catch (e) {
+        console.warn('[Nostr] Failed to send signaling message', e);
+      }
+    }
+
+    async function handleSignalingEvent(event) {
+      if (event.pubkey === pubkey) return;
+
+      try {
+        const decrypted = await nip04.decrypt(secretKey, event.pubkey, event.content);
+        const message = JSON.parse(decrypted);
+
+        if (message.documentId !== documentId) return;
+
+        console.log(`[Nostr] Received ${message.type} from ${event.pubkey.slice(0, 8)}...`);
+
+        switch (message.type) {
+          case 'offer':
+            await handleOffer(event.pubkey, message.payload);
+            break;
+          case 'answer':
+            await handleAnswer(event.pubkey, message.payload);
+            break;
+          case 'ice-candidate':
+            await handleIceCandidate(event.pubkey, message.payload);
+            break;
+        }
+      } catch (e) {
+        console.warn('[Nostr] Failed to process signaling', e);
+      }
+    }
+
+    // ========================================================================
+    // WebRTC
+    // ========================================================================
+    async function initiatePeerConnection(remotePubkey) {
+      if (peers.has(remotePubkey)) return;
+
+      // Collision resolution: lower pubkey initiates
+      if (pubkey > remotePubkey) {
+        console.log(`[WebRTC] Waiting for ${remotePubkey.slice(0, 8)}... to initiate`);
+        return;
+      }
+
+      console.log(`[WebRTC] Initiating connection to ${remotePubkey.slice(0, 8)}...`);
+      statusDot.className = 'status-dot connecting';
+
+      const pc = createPeerConnection(remotePubkey);
+      const dc = pc.createDataChannel('yjs', { ordered: true });
+      setupDataChannel(remotePubkey, dc);
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      await sendSignalingMessage(remotePubkey, {
+        type: 'offer',
+        documentId,
+        payload: offer,
+      });
+    }
+
+    function createPeerConnection(remotePubkey) {
+      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+      const peer = {
+        pubkey: remotePubkey,
+        connection: pc,
+        dataChannel: null,
+        connected: false,
+      };
+      peers.set(remotePubkey, peer);
+
+      pc.onicecandidate = async (event) => {
+        if (event.candidate) {
+          await sendSignalingMessage(remotePubkey, {
+            type: 'ice-candidate',
+            documentId,
+            payload: event.candidate.toJSON(),
+          });
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log(`[WebRTC] State with ${remotePubkey.slice(0, 8)}...: ${pc.connectionState}`);
+        
+        if (pc.connectionState === 'connected') {
+          peer.connected = true;
+          updateStatus();
+          syncFullState(remotePubkey);
+          showToast('Verbonden met medewerker!');
+        } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          removePeer(remotePubkey);
+        }
+      };
+
+      pc.ondatachannel = (event) => {
+        setupDataChannel(remotePubkey, event.channel);
+      };
+
+      return pc;
+    }
+
+    async function handleOffer(remotePubkey, offer) {
+      let peer = peers.get(remotePubkey);
+      
+      if (!peer) {
+        statusDot.className = 'status-dot connecting';
+        const pc = createPeerConnection(remotePubkey);
+        peer = peers.get(remotePubkey);
+      }
+
+      await peer.connection.setRemoteDescription(offer);
+      const answer = await peer.connection.createAnswer();
+      await peer.connection.setLocalDescription(answer);
+
+      await sendSignalingMessage(remotePubkey, {
+        type: 'answer',
+        documentId,
+        payload: answer,
+      });
+    }
+
+    async function handleAnswer(remotePubkey, answer) {
+      const peer = peers.get(remotePubkey);
+      if (!peer) return;
+      await peer.connection.setRemoteDescription(answer);
+    }
+
+    async function handleIceCandidate(remotePubkey, candidate) {
+      const peer = peers.get(remotePubkey);
+      if (!peer) return;
+      await peer.connection.addIceCandidate(candidate);
+    }
+
+    function setupDataChannel(remotePubkey, dc) {
+      const peer = peers.get(remotePubkey);
+      if (!peer) return;
+
+      peer.dataChannel = dc;
+      dc.binaryType = 'arraybuffer';
+
+      dc.onopen = () => {
+        console.log(`[WebRTC] Data channel open with ${remotePubkey.slice(0, 8)}...`);
+        syncFullState(remotePubkey);
+      };
+
+      dc.onmessage = (event) => {
+        handleDataChannelMessage(remotePubkey, event.data);
+      };
+    }
+
+    function handleDataChannelMessage(remotePubkey, data) {
+      const message = new Uint8Array(data);
+      const messageType = message[0];
+      const payload = message.slice(1);
+
+      if (messageType === 0) {
+        Y.applyUpdate(doc, payload, remotePubkey);
+      }
+    }
+
+    function syncFullState(remotePubkey) {
+      const peer = peers.get(remotePubkey);
+      if (!peer?.dataChannel || peer.dataChannel.readyState !== 'open') return;
+
+      const state = Y.encodeStateAsUpdate(doc);
+      const message = new Uint8Array(1 + state.length);
+      message[0] = 0;
+      message.set(state, 1);
+
+      peer.dataChannel.send(message);
+      console.log(`[WebRTC] Synced state to ${remotePubkey.slice(0, 8)}...`);
+    }
+
+    function broadcastUpdate(update, origin) {
+      if (typeof origin === 'string' && origin !== 'local') return;
+
+      const message = new Uint8Array(1 + update.length);
+      message[0] = 0;
+      message.set(update, 1);
+
+      for (const peer of peers.values()) {
+        if (peer.dataChannel?.readyState === 'open') {
+          peer.dataChannel.send(message);
+        }
+      }
+    }
+
+    function removePeer(remotePubkey) {
+      const peer = peers.get(remotePubkey);
+      if (!peer) return;
+
+      peer.dataChannel?.close();
+      peer.connection.close();
+      peers.delete(remotePubkey);
+      updateStatus();
+    }
+
+    // ========================================================================
+    // Toolbar Actions
+    // ========================================================================
+    function execCommand(command, value = null) {
+      document.execCommand(command, false, value);
+      editorEl.focus();
+      syncEditorToYjs();
+    }
+
+    document.querySelectorAll('.toolbar-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const action = btn.dataset.action;
+        switch (action) {
+          case 'bold': execCommand('bold'); break;
+          case 'italic': execCommand('italic'); break;
+          case 'underline': execCommand('underline'); break;
+          case 'h1': execCommand('formatBlock', 'h1'); break;
+          case 'h2': execCommand('formatBlock', 'h2'); break;
+          case 'h3': execCommand('formatBlock', 'h3'); break;
+          case 'ul': execCommand('insertUnorderedList'); break;
+          case 'ol': execCommand('insertOrderedList'); break;
+          case 'quote': execCommand('formatBlock', 'blockquote'); break;
+          case 'code': execCommand('formatBlock', 'pre'); break;
+        }
+      });
+    });
+
+    // ========================================================================
+    // Event Handlers
+    // ========================================================================
+    shareBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        showToast('Link gekopieerd!');
+      } catch (e) {
+        showToast('Kon link niet kopiëren');
+      }
+    });
+
+    newDocBtn.addEventListener('click', () => {
+      const newId = crypto.randomUUID().replace(/-/g, '');
+      window.location.hash = newId;
+      window.location.reload();
+    });
+
+    editorEl.addEventListener('input', () => {
+      syncEditorToYjs();
+    });
+
+    // Keyboard shortcuts
+    editorEl.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key.toLowerCase()) {
+          case 'b': e.preventDefault(); execCommand('bold'); break;
+          case 'i': e.preventDefault(); execCommand('italic'); break;
+          case 'u': e.preventDefault(); execCommand('underline'); break;
+        }
+      }
+    });
+
+    // ========================================================================
+    // Initialize
+    // ========================================================================
+    async function init() {
+      documentId = getDocumentId();
+      docIdEl.textContent = `#${documentId.slice(0, 8)}`;
+
+      // Initialize Yjs
+      doc = new Y.Doc();
+      yText = doc.getText('content');
+
+      // Local persistence
+      localPersistence = new IndexeddbPersistence(`docs-p2p-${documentId}`, doc);
+      
+      localPersistence.on('synced', () => {
+        console.log('[Local] Loaded from IndexedDB');
+        syncYjsToEditor();
+      });
+
+      // Sync Yjs changes to editor
+      yText.observe(() => {
+        syncYjsToEditor();
+      });
+
+      // Broadcast updates to peers
+      doc.on('update', broadcastUpdate);
+
+      // Initialize Nostr
+      pool = new SimplePool();
+      secretKey = generateSecretKey();
+      pubkey = getPublicKey(secretKey);
+      console.log(`[Nostr] Local pubkey: ${pubkey.slice(0, 8)}...`);
+
+      // Subscribe and announce
+      subscribeToPresence();
+      subscribeToSignaling();
+      await announcePresence();
+
+      // Presence heartbeat
+      presenceTimer = setInterval(announcePresence, 30000);
+
+      // Update UI
+      statusDot.className = 'status-dot';
+      statusText.textContent = 'Alleen jij';
+      editorEl.focus();
+
+      console.log('[Init] Ready!');
+    }
+
+    // Handle hash changes (navigation between documents)
+    window.addEventListener('hashchange', () => {
+      window.location.reload();
+    });
+
+    // Start
+    init().catch(console.error);
+  </script>
+</body>
+</html>
