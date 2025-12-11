@@ -542,6 +542,7 @@
     const PRESENCE_INTERVAL = 20000;
     const PRESENCE_TIMEOUT = 60000;
     const CLEANUP_INTERVAL = 45000;
+    const CONNECTION_TIMEOUT = 15000; // 15 seconden om te verbinden, anders opgeven
 
     // ========================================================================
     // State
@@ -684,6 +685,7 @@
           type: 'join',
           documentId,
           pubkey,
+          sessionId,
           timestamp: Date.now(),
         }),
       }, secretKey);
@@ -715,8 +717,16 @@
 
       try {
         const presence = JSON.parse(event.content);
+        
+        // Filter oude presence berichten (ouder dan 30 seconden)
+        const messageAge = Date.now() - (presence.timestamp || 0);
+        if (messageAge > 30000) {
+          console.log(`[Nostr] Ignoring old presence from ${event.pubkey.slice(0, 8)}... (${Math.round(messageAge/1000)}s old)`);
+          return;
+        }
+        
         if (presence.type === 'join' && !peers.has(event.pubkey)) {
-          console.log(`[Nostr] Peer discovered: ${event.pubkey.slice(0, 8)}...`);
+          console.log(`[Nostr] Fresh peer discovered: ${event.pubkey.slice(0, 8)}... (${Math.round(messageAge/1000)}s old)`);
           initiatePeerConnection(event.pubkey);
         }
       } catch (e) {
@@ -821,8 +831,18 @@
         connection: pc,
         dataChannel: null,
         connected: false,
+        startedAt: Date.now(),
+        connectionTimeout: null,
       };
       peers.set(remotePubkey, peer);
+
+      // Timeout: als we niet verbinden binnen CONNECTION_TIMEOUT, geef op
+      peer.connectionTimeout = setTimeout(() => {
+        if (!peer.connected) {
+          console.log(`[WebRTC] Connection timeout for ${remotePubkey.slice(0, 8)}... - peer waarschijnlijk offline`);
+          removePeer(remotePubkey);
+        }
+      }, CONNECTION_TIMEOUT);
 
       pc.onicecandidate = async (event) => {
         if (event.candidate) {
@@ -839,6 +859,10 @@
         
         if (pc.connectionState === 'connected') {
           peer.connected = true;
+          if (peer.connectionTimeout) {
+            clearTimeout(peer.connectionTimeout);
+            peer.connectionTimeout = null;
+          }
           updateStatus();
           syncFullState(remotePubkey);
           showToast('Verbonden met medewerker!');
@@ -944,10 +968,23 @@
       const peer = peers.get(remotePubkey);
       if (!peer) return;
 
-      peer.dataChannel?.close();
-      peer.connection.close();
+      // Clear connection timeout
+      if (peer.connectionTimeout) {
+        clearTimeout(peer.connectionTimeout);
+        peer.connectionTimeout = null;
+      }
+
+      try {
+        peer.dataChannel?.close();
+      } catch (e) { /* ignore */ }
+      
+      try {
+        peer.connection?.close();
+      } catch (e) { /* ignore */ }
+      
       peers.delete(remotePubkey);
       updateStatus();
+      console.log(`[WebRTC] Removed peer ${remotePubkey.slice(0, 8)}...`);
     }
 
     // ========================================================================
