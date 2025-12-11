@@ -4,6 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Docs P2P - Collaborative Editor</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "yjs": "https://cdn.jsdelivr.net/npm/yjs@13.6.18/+esm",
+        "y-indexeddb": "https://cdn.jsdelivr.net/npm/y-indexeddb@9.0.12/+esm",
+        "nostr-tools": "https://cdn.jsdelivr.net/npm/nostr-tools@2.7.2/+esm"
+      }
+    }
+  </script>
   
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -504,14 +513,13 @@
   <div class="toast" id="toast"></div>
 
   <!-- Dependencies -->
-  <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.18/dist/yjs.cjs" type="module"></script>
   <script type="module">
     // ========================================================================
     // Imports via CDN (ESM)
     // ========================================================================
-    import * as Y from 'https://cdn.jsdelivr.net/npm/yjs@13.6.18/+esm';
-    import { IndexeddbPersistence } from 'https://cdn.jsdelivr.net/npm/y-indexeddb@9.0.12/+esm';
-    import * as nostrTools from 'https://cdn.jsdelivr.net/npm/nostr-tools@2.7.2/+esm';
+    import * as Y from 'yjs';
+    import { IndexeddbPersistence } from 'y-indexeddb';
+    import * as nostrTools from 'nostr-tools';
 
     const { SimplePool, generateSecretKey, getPublicKey, finalizeEvent, nip04 } = nostrTools;
 
@@ -531,6 +539,9 @@
 
     const KIND_PRESENCE = 30078;
     const KIND_ENCRYPTED_DM = 4;
+    const PRESENCE_INTERVAL = 20000;
+    const PRESENCE_TIMEOUT = 60000;
+    const CLEANUP_INTERVAL = 45000;
 
     // ========================================================================
     // State
@@ -540,13 +551,15 @@
     let provider;
     let localPersistence;
     let documentId;
-    
+
+    const sessionId = crypto.randomUUID();
     const peers = new Map();
     let pool;
     let secretKey;
     let pubkey;
     let subscriptions = [];
     let presenceTimer;
+    let cleanupTimer;
 
     // DOM elements
     const editorEl = document.getElementById('editor');
