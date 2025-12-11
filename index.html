@@ -615,6 +615,8 @@
     function updateStatus() {
       const connectedCount = Array.from(peers.values()).filter(p => p.connected).length;
       
+      console.log(`[Status] Connected peers: ${connectedCount}, Total peers: ${peers.size}`);
+      
       if (connectedCount === 0) {
         statusDot.className = 'status-dot';
         statusText.textContent = 'Alleen jij';
@@ -627,8 +629,10 @@
       peersAvatars.innerHTML = '';
       const colors = ['#e91e63', '#9c27b0', '#3f51b5', '#009688', '#ff5722', '#795548'];
       
-      Array.from(peers.values())
-        .filter(p => p.connected)
+      const connectedPeers = Array.from(peers.values()).filter(p => p.connected);
+      console.log('[Status] Connected peers for avatars:', connectedPeers.length);
+      
+      connectedPeers
         .slice(0, 5)
         .forEach((peer, i) => {
           const avatar = document.createElement('div');
@@ -973,10 +977,12 @@
         
         if (pc.connectionState === 'connected') {
           peer.connected = true;
+          console.log(`[WebRTC] Successfully connected to ${remotePubkey.slice(0, 8)}!`);
           updateStatus();
           syncFullState(remotePubkey);
           showToast('Verbonden met medewerker!');
         } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          console.log(`[WebRTC] Connection failed/closed with ${remotePubkey.slice(0, 8)}`);
           removePeer(remotePubkey);
         }
       };
@@ -989,6 +995,7 @@
     }
 
     async function handleOffer(remotePubkey, offer) {
+      console.log(`[WebRTC] Received offer from ${remotePubkey.slice(0, 8)}...`);
       let peer = peers.get(remotePubkey);
       
       if (!peer) {
@@ -1001,6 +1008,7 @@
       const answer = await peer.connection.createAnswer();
       await peer.connection.setLocalDescription(answer);
 
+      console.log(`[WebRTC] Sending answer to ${remotePubkey.slice(0, 8)}...`);
       await sendSignalingMessage(remotePubkey, {
         type: 'answer',
         documentId,
