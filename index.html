@@ -786,41 +786,62 @@
     // Nostr Signaling
     // ========================================================================
     async function announcePresence() {
-      const event = finalizeEvent({
-        kind: KIND_PRESENCE,
-        created_at: Math.floor(Date.now() / 1000),
-        tags: [
-          ['d', documentId],
-          ['t', `doc-${documentId}`],
-        ],
-        content: JSON.stringify({
-          type: 'join',
-          documentId,
-          pubkey,
-          timestamp: Date.now(),
-        }),
-      }, secretKey);
-
       try {
-        await Promise.any(pool.publish(DEFAULT_RELAYS, event));
-        console.log('[Nostr] Presence announced');
+        const event = finalizeEvent({
+          kind: KIND_PRESENCE,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ['d', documentId],
+            ['t', `doc-${documentId}`],
+          ],
+          content: JSON.stringify({
+            type: 'join',
+            documentId,
+            pubkey,
+            timestamp: Date.now(),
+          }),
+        }, secretKey);
+
+        console.log('[Nostr] Announcing presence...', event);
+        const results = await Promise.allSettled(pool.publish(DEFAULT_RELAYS, event));
+        const successful = results.filter(r => r.status === 'fulfilled').length;
+        console.log(`[Nostr] Presence announced to ${successful}/${DEFAULT_RELAYS.length} relays`);
+        
+        if (successful === 0) {
+          throw new Error('No relays available');
+        }
       } catch (e) {
         console.warn('[Nostr] Failed to announce presence', e);
+        showToast('Verbinding met netwerk mislukt');
       }
     }
 
     function subscribeToPresence() {
-      const filter = {
-        kinds: [KIND_PRESENCE],
-        '#d': [documentId],
-        since: Math.floor(Date.now() / 1000) - 120,
-      };
+      try {
+        const filter = {
+          kinds: [KIND_PRESENCE],
+          '#d': [documentId],
+          since: Math.floor(Date.now() / 1000) - 120,
+        };
 
-      const sub = pool.subscribeMany(DEFAULT_RELAYS, [filter], {
-        onevent: (event) => handlePresenceEvent(event),
-      });
+        console.log('[Nostr] Subscribing to presence with filter:', filter);
+        const sub = pool.subscribeMany(DEFAULT_RELAYS, [filter], {
+          onevent: (event) => {
+            console.log('[Nostr] Received presence event:', event);
+            handlePresenceEvent(event);
+          },
+          onclose: (reason) => {
+            console.log('[Nostr] Presence subscription closed:', reason);
+          },
+          oneose: () => {
+            console.log('[Nostr] Presence subscription end of stored events');
+          }
+        });
 
-      subscriptions.push({ close: () => sub.close() });
+        subscriptions.push({ close: () => sub.close() });
+      } catch (error) {
+        console.error('[Nostr] Failed to subscribe to presence:', error);
+      }
     }
 
     function handlePresenceEvent(event) {
@@ -1355,6 +1376,7 @@ ${content}
     async function init() {
       documentId = getDocumentId();
       docIdEl.textContent = `#${documentId.slice(0, 8)}`;
+      console.log('[Init] Document ID:', documentId);
 
       // Initialize Yjs
       doc = new Y.Doc();
@@ -1377,18 +1399,25 @@ ${content}
       doc.on('update', broadcastUpdate);
 
       // Initialize Nostr
-      pool = new SimplePool();
-      secretKey = generateSecretKey();
-      pubkey = getPublicKey(secretKey);
-      console.log(`[Nostr] Local pubkey: ${pubkey.slice(0, 8)}...`);
+      try {
+        pool = new SimplePool();
+        secretKey = generateSecretKey();
+        pubkey = getPublicKey(secretKey);
+        console.log(`[Nostr] Local pubkey: ${pubkey.slice(0, 8)}...`);
 
-      // Subscribe and announce
-      subscribeToPresence();
-      subscribeToSignaling();
-      await announcePresence();
+        // Subscribe and announce
+        subscribeToPresence();
+        subscribeToSignaling();
+        await announcePresence();
 
-      // Presence heartbeat
-      presenceTimer = setInterval(announcePresence, 30000);
+        // Presence heartbeat
+        presenceTimer = setInterval(announcePresence, 30000);
+        
+        console.log('[Nostr] Initialized successfully');
+      } catch (error) {
+        console.error('[Nostr] Initialization failed:', error);
+        showToast('Fout bij verbinden met netwerk');
+      }
 
       // Update UI
       statusDot.className = 'status-dot';
