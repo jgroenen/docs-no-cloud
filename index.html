@@ -1146,6 +1146,21 @@ ${content}
       };
     }
 
+    function broadcastUpdate(update, origin) {
+      if (origin !== 'local') return;
+
+      peerConnections.forEach((peer, remotePubkey) => {
+        const channel = peer.dataChannel;
+        if (!channel || channel.readyState !== 'open') return;
+
+        try {
+          channel.send(update);
+        } catch (error) {
+          console.warn(`[P2P] Failed to send update to ${remotePubkey.slice(0, 8)}`, error);
+        }
+      });
+    }
+
     // Send WebRTC signaling via Nostr
     async function sendWebRTCSignal(targetPubkey, message) {
       try {
