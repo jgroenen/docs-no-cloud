@@ -659,34 +659,6 @@
       }
     }
 
-    function subscribeToPresence() {
-      try {
-        const filter = {
-          kinds: [KIND_PRESENCE],
-          '#d': [documentId],
-          since: Math.floor(Date.now() / 1000) - 120,
-        };
-
-        console.log('[Nostr] Subscribing to presence with filter:', filter);
-        const sub = pool.subscribeMany(DEFAULT_RELAYS, [filter], {
-          onevent: (event) => {
-            console.log('[Nostr] Received presence event:', event);
-            handlePresenceEvent(event);
-          },
-          onclose: (reason) => {
-            console.log('[Nostr] Presence subscription closed:', reason);
-          },
-          oneose: () => {
-            console.log('[Nostr] Presence subscription end of stored events');
-          }
-        });
-
-        subscriptions.push({ close: () => sub.close() });
-      } catch (error) {
-        console.error('[Nostr] Failed to subscribe to presence:', error);
-      }
-    }
-
     function handlePresenceEvent(event) {
       if (event.pubkey === pubkey) return;
 
