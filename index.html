@@ -539,7 +539,7 @@
 
   <script type="module">
     // ========================================================================
-    // Imports via CDN (ESM) - Back to jsDelivr with correct paths
+    // Imports - Pure Nostr P2P approach
     // ========================================================================
     import * as Y from 'https://cdn.jsdelivr.net/npm/yjs@13.6.18/+esm';
     import { IndexeddbPersistence } from 'https://cdn.jsdelivr.net/npm/y-indexeddb@9.0.12/+esm';
@@ -548,44 +548,44 @@
     const { SimplePool, generateSecretKey, getPublicKey, finalizeEvent, nip04 } = nostrTools;
 
     // ========================================================================
-    // Constants
+    // Configuration - Nostr discovery + WebRTC P2P
     // ========================================================================
-    const DEFAULT_RELAYS = [
+    const { SimplePool, generateSecretKey, getPublicKey, finalizeEvent, nip04 } = nostrTools;
+
+    // Nostr relays - ONLY for peer discovery
+    const NOSTR_RELAYS = [
       'wss://relay.damus.io',
       'wss://nos.lol', 
       'wss://relay.nostr.band',
-      'wss://nostr-pub.wellorder.net',
-      'wss://relay.current.fyi',
-      'wss://eden.nostr.land',
     ];
 
+    // WebRTC for direct P2P communication
     const ICE_SERVERS = [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
-      { urls: 'stun:global.stun.twilio.com:3478' },
     ];
 
-    const KIND_PRESENCE = 30078;
-    const KIND_ENCRYPTED_DM = 4;
+    const KIND_PRESENCE = 30078;        // Nostr: "I'm here!"
+    const KIND_WEBRTC_SIGNAL = 30079;   // Nostr: WebRTC signaling
+    const KIND_CURSOR_UPDATE = 30080;
 
     // ========================================================================
-    // State
+    // State - Nostr discovery + WebRTC P2P
     // ========================================================================
     let doc;
     let yText;
-    let provider;
     let localPersistence;
     let documentId;
-    
-    const peers = new Map();
+
+    // Nostr - ONLY for peer discovery
     let pool;
     let secretKey;
     let pubkey;
     let subscriptions = [];
     let presenceTimer;
+
+    // WebRTC - direct P2P connections
+    const peerConnections = new Map(); // pubkey -> {connection, dataChannel, connected}
     let cursorUpdateTimer;
     const liveCursors = new Map();
 
@@ -620,37 +620,33 @@
     }
 
     function updateStatus() {
-      const connectedCount = Array.from(peers.values()).filter(p => p.connected).length;
+      const connectedCount = Array.from(peerConnections.values()).filter(p => p.connected).length;
       
-      console.log(`[Status] Connected peers: ${connectedCount}, Total peers: ${peers.size}`);
+      console.log(`[Status] Connected P2P peers: ${connectedCount}`);
       
       if (connectedCount === 0) {
         statusDot.className = 'status-dot';
-        // Don't override network status messages
-        if (!statusText.textContent.includes('relays') && !statusText.textContent.includes('fout')) {
-          statusText.textContent = 'Alleen jij';
-        }
+        statusText.textContent = 'Alleen jij';
       } else {
         statusDot.className = 'status-dot connected';
         statusText.textContent = `${connectedCount + 1} gebruikers`;
       }
 
-      // Update avatars
+      // Update avatars from connected peers
       peersAvatars.innerHTML = '';
       const colors = ['#e91e63', '#9c27b0', '#3f51b5', '#009688', '#ff5722', '#795548'];
       
-      const connectedPeers = Array.from(peers.values()).filter(p => p.connected);
-      console.log('[Status] Connected peers for avatars:', connectedPeers.length);
-      
-      connectedPeers
-        .slice(0, 5)
-        .forEach((peer, i) => {
+      let index = 0;
+      peerConnections.forEach((peer, peerPubkey) => {
+        if (peer.connected) {
           const avatar = document.createElement('div');
           avatar.className = 'peer-avatar';
-          avatar.style.background = colors[i % colors.length];
-          avatar.textContent = peer.pubkey.slice(0, 2).toUpperCase();
+          avatar.style.background = colors[index % colors.length];
+          avatar.textContent = peerPubkey.slice(0, 2).toUpperCase();
           peersAvatars.appendChild(avatar);
-        });
+          index++;
+        }
+      });
     }
 
     function generateColor(str) {
@@ -797,8 +793,139 @@
     }
 
     // ========================================================================
-    // Nostr Signaling
+    // Yjs Awareness-based Cursor Sync via Nostr  
     // ========================================================================
+    async function broadcastAwareness() {
+      const awarenessUpdate = awareness.getLocalState();
+      if (!awarenessUpdate) return;
+      
+      try {
+        const event = finalizeEvent({
+          kind: KIND_CURSOR_UPDATE,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ['d', documentId],
+            ['t', `doc-${documentId}`],
+          ],
+          content: JSON.stringify(awarenessUpdate),
+        }, secretKey);
+
+        pool.publish(DEFAULT_RELAYS, event);
+      } catch (error) {
+        // Silently ignore awareness broadcast errors
+      }
+    }
+
+    function subscribeToCursorUpdates() {
+      try {
+        const filter = {
+          kinds: [KIND_CURSOR_UPDATE],
+          '#d': [documentId],
+          since: Math.floor(Date.now() / 1000) - 30,
+        };
+
+        console.log('[Nostr] Subscribing to cursor updates...');
+        const sub = pool.subscribeMany(DEFAULT_RELAYS, [filter], {
+          onevent: (event) => {
+            handleAwarenessUpdate(event);
+          },
+        });
+
+        subscriptions.push({ close: () => sub.close() });
+      } catch (error) {
+        console.error('[Nostr] Failed to subscribe to cursor updates:', error);
+      }
+    }
+
+    function handleAwarenessUpdate(event) {
+      if (event.pubkey === pubkey) return;
+
+      try {
+        const awarenessState = JSON.parse(event.content);
+        awareness.setLocalStateField('user', {
+          name: event.pubkey.slice(0, 6).toUpperCase(),
+          color: generateColor(event.pubkey),
+          colorLight: generateColor(event.pubkey) + '33'
+        });
+        
+        // Apply the remote awareness state
+        const states = new Map([[awareness.clientID, awarenessState]]);
+        awareness.applyAwarenessUpdate(awarenessUpdate, 'remote');
+      } catch (error) {
+        // Silently ignore invalid awareness data
+      }
+    }
+    async function broadcastUpdate(update, origin) {
+      if (origin !== 'local') return; // Only broadcast local changes
+      
+      try {
+        const event = finalizeEvent({
+          kind: KIND_DOCUMENT_UPDATE,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ['d', documentId],
+            ['t', `doc-${documentId}`],
+          ],
+          content: Array.from(update).join(','), // Convert Uint8Array to string
+        }, secretKey);
+
+        console.log('[Nostr] Broadcasting document update...');
+        const results = await Promise.allSettled(pool.publish(DEFAULT_RELAYS, event));
+        const successful = results.filter(r => r.status === 'fulfilled').length;
+        console.log(`[Nostr] Update broadcast to ${successful}/${DEFAULT_RELAYS.length} relays`);
+      } catch (error) {
+        console.warn('[Nostr] Failed to broadcast update:', error);
+      }
+    }
+
+    function subscribeToDocumentUpdates() {
+      try {
+        const filter = {
+          kinds: [KIND_DOCUMENT_UPDATE],
+          '#d': [documentId],
+          since: Math.floor(Date.now() / 1000) - 60, // Last minute only
+        };
+
+        console.log('[Nostr] Subscribing to document updates with filter:', filter);
+        const sub = pool.subscribeMany(DEFAULT_RELAYS, [filter], {
+          onevent: (event) => {
+            console.log('[Nostr] Received document update:', event);
+            handleDocumentUpdate(event);
+          },
+          onclose: (reason) => {
+            console.log('[Nostr] Document updates subscription closed:', reason);
+          },
+          oneose: () => {
+            console.log('[Nostr] Document updates subscription end of stored events');
+          }
+        });
+
+        subscriptions.push({ close: () => sub.close() });
+      } catch (error) {
+        console.error('[Nostr] Failed to subscribe to document updates:', error);
+      }
+    }
+
+    function handleDocumentUpdate(event) {
+      if (event.pubkey === pubkey) return; // Ignore our own updates
+
+      try {
+        const updateArray = event.content.split(',').map(x => parseInt(x, 10));
+        const update = new Uint8Array(updateArray);
+        
+        console.log(`[Nostr] Applying update from ${event.pubkey.slice(0, 8)}...`);
+        Y.applyUpdate(doc, update, event.pubkey);
+        
+        // Add peer if not already tracked
+        if (!peers.has(event.pubkey)) {
+          peers.add(event.pubkey);
+          updateStatus();
+          showToast('Nieuwe medewerker verbonden!');
+        }
+      } catch (error) {
+        console.warn('[Nostr] Failed to apply document update:', error);
+      }
+    }
     async function announcePresence() {
       try {
         const event = finalizeEvent({
@@ -869,7 +996,8 @@
         const presence = JSON.parse(event.content);
         if (presence.type === 'join' && !peers.has(event.pubkey)) {
           console.log(`[Nostr] Peer discovered: ${event.pubkey.slice(0, 8)}...`);
-          initiatePeerConnection(event.pubkey);
+          peers.add(event.pubkey);
+          updateStatus();
         }
       } catch (e) {
         console.warn('[Nostr] Invalid presence event');
@@ -1169,13 +1297,8 @@
     }
 
     function removePeer(remotePubkey) {
-      const peer = peers.get(remotePubkey);
-      if (!peer) return;
-// removeLiveCursor(remotePubkey); // DISABLED FOR TESTING
-      peer.dataChannel?.close();
-      peer.connection.close();
+      if (!peers.has(remotePubkey)) return;
       peers.delete(remotePubkey);
-      removeLiveCursor(remotePubkey);
       updateStatus();
     }
 
@@ -1428,20 +1551,20 @@ ${content}
 
     editorEl.addEventListener('input', () => {
       syncEditorToYjs();
-      // broadcastCursor(); // DISABLED FOR TESTING
+      updateAwarenessCursor();
     });
     
-    // Track cursor movements
-    editorEl.addEventListener('selectionchange', () => {
-      if (cursorUpdateTimer) clearTimeout(cursorUpdateTimer);
-      cursorUpdateTimer = setTimeout(broadcastCursor, 100);
-    });
-    
-    editorEl.addEventListener('click', broadcastCursor);
-    editorEl.addEventListener('keyup', () => {
-      if (cursorUpdateTimer) clearTimeout(cursorUpdateTimer);
-      cursorUpdateTimer = setTimeout(broadcastCursor, 50);
-    });
+    // Track cursor movements with Yjs Awareness
+    function updateAwarenessCursor() {
+      if (!wsProvider) return;
+      
+      const selection = window.getSelection();
+      if (selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        wsProvider.awareness.setLocalStateField('cursor', {
+    editorEl.addEventListener('selectionchange', updateAwarenessCursor);
+    editorEl.addEventListener('click', updateAwarenessCursor);
+    editorEl.addEventListener('keyup', updateAwarenessCursor);
 
     // Keyboard shortcuts
     editorEl.addEventListener('keydown', (e) => {
@@ -1455,12 +1578,276 @@ ${content}
     });
 
     // ========================================================================
-    // Initialize
+    // Nostr - ONLY for peer discovery
+    // ========================================================================
+    async function announcePresence() {
+      try {
+        const event = finalizeEvent({
+          kind: KIND_PRESENCE,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [
+            ['d', documentId],
+            ['t', `doc-${documentId}`],
+          ],
+          content: JSON.stringify({
+            type: 'join',
+            documentId,
+            pubkey,
+            timestamp: Date.now(),
+          }),
+        }, secretKey);
+
+        console.log('[Nostr] Announcing presence for peer discovery...');
+        const results = await Promise.allSettled(pool.publish(NOSTR_RELAYS, event));
+        const successful = results.filter(r => r.status === 'fulfilled').length;
+        console.log(`[Nostr] Announced to ${successful}/${NOSTR_RELAYS.length} relays`);
+      } catch (e) {
+        console.warn('[Nostr] Failed to announce presence', e);
+      }
+    }
+
+    function subscribeToPresence() {
+      try {
+        const filter = {
+          kinds: [KIND_PRESENCE],
+          '#d': [documentId],
+          since: Math.floor(Date.now() / 1000) - 300,
+        };
+
+        console.log('[Nostr] Listening for peer announcements...');
+        const sub = pool.subscribeMany(NOSTR_RELAYS, [filter], {
+          onevent: (event) => {
+            handlePresenceEvent(event);
+          },
+        });
+
+        subscriptions.push({ close: () => sub.close() });
+      } catch (error) {
+        console.error('[Nostr] Failed to subscribe to presence:', error);
+      }
+    }
+
+    function handlePresenceEvent(event) {
+      if (event.pubkey === pubkey) return;
+
+      try {
+        const presence = JSON.parse(event.content);
+        if (presence.type === 'join' && !peerConnections.has(event.pubkey)) {
+          console.log(`[Nostr] New peer discovered: ${event.pubkey.slice(0, 8)}...`);
+          
+          // Start WebRTC connection to this peer
+          initiatePeerConnection(event.pubkey);
+          
+          showToast(`Nieuwe peer ontdekt! Verbinden via P2P...`);
+        }
+      } catch (e) {
+        console.warn('[Nostr] Invalid presence event');
+      }
+    }
+    // ========================================================================
+    // WebRTC - Direct P2P connections
+    // ========================================================================
+    async function initiatePeerConnection(remotePubkey) {
+      if (peerConnections.has(remotePubkey)) return;
+      
+      // Collision resolution: lower pubkey initiates
+      if (pubkey > remotePubkey) {
+        console.log(`[P2P] Waiting for ${remotePubkey.slice(0, 8)}... to initiate`);
+        return;
+      }
+
+      console.log(`[P2P] Connecting to ${remotePubkey.slice(0, 8)}...`);
+      await createPeerConnection(remotePubkey, true); // true = we initiate
+    }
+
+    async function createPeerConnection(remotePubkey, initiate = false) {
+      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      
+      const peer = {
+        connection: pc,
+        dataChannel: null,
+        connected: false
+      };
+      peerConnections.set(remotePubkey, peer);
+
+      // Create data channel for Yjs
+      if (initiate) {
+        const dc = pc.createDataChannel('yjs', { ordered: true });
+        setupDataChannel(remotePubkey, dc);
+      }
+
+      // Handle incoming data channel
+      pc.ondatachannel = (event) => {
+        setupDataChannel(remotePubkey, event.channel);
+      };
+
+      // ICE candidates via Nostr
+      pc.onicecandidate = async (event) => {
+        if (event.candidate) {
+          await sendWebRTCSignal(remotePubkey, {
+            type: 'ice-candidate',
+            candidate: event.candidate.toJSON()
+          });
+        }
+      };
+
+      // Connection state
+      pc.onconnectionstatechange = () => {
+        console.log(`[P2P] State with ${remotePubkey.slice(0, 8)}: ${pc.connectionState}`);
+        
+        if (pc.connectionState === 'connected') {
+          peer.connected = true;
+          updateStatus();
+          showToast(`P2P verbinding actief!`);
+        } else if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+          peerConnections.delete(remotePubkey);
+          updateStatus();
+        }
+      };
+
+      // Create offer if we initiate
+      if (initiate) {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        
+        await sendWebRTCSignal(remotePubkey, {
+          type: 'offer',
+          offer: offer
+        });
+      }
+
+      return peer;
+    }
+
+    function setupDataChannel(remotePubkey, dc) {
+      const peer = peerConnections.get(remotePubkey);
+      if (!peer) return;
+
+      peer.dataChannel = dc;
+      dc.binaryType = 'arraybuffer';
+
+      dc.onopen = () => {
+        console.log(`[P2P] Data channel open with ${remotePubkey.slice(0, 8)}`);
+        peer.connected = true;
+        updateStatus();
+        
+        // Send full document state
+        const state = Y.encodeStateAsUpdate(doc);
+        dc.send(state);
+      };
+
+      dc.onmessage = (event) => {
+        // Apply Yjs update directly
+        const update = new Uint8Array(event.data);
+        Y.applyUpdate(doc, update, remotePubkey);
+      };
+    }
+
+    // Broadcast Yjs updates to all connected peers
+    function broadcastUpdate(update, origin) {
+      if (origin !== 'local') return;
+      
+      peerConnections.forEach((peer, pubkey) => {
+        if (peer.dataChannel?.readyState === 'open') {
+          peer.dataChannel.send(update);
+        }
+      });
+    }
+
+    // Send WebRTC signaling via Nostr
+    async function sendWebRTCSignal(targetPubkey, message) {
+      try {
+        const encrypted = await nip04.encrypt(secretKey, targetPubkey, JSON.stringify(message));
+        
+        const event = finalizeEvent({
+          kind: KIND_WEBRTC_SIGNAL,
+          created_at: Math.floor(Date.now() / 1000),
+          tags: [['p', targetPubkey], ['d', documentId]],
+          content: encrypted,
+        }, secretKey);
+
+        await Promise.any(pool.publish(NOSTR_RELAYS, event));
+      } catch (e) {
+        console.warn('[P2P] Failed to send signaling', e);
+      }
+    }
+    // Subscribe to WebRTC signaling via Nostr
+    function subscribeToWebRTCSignals() {
+      const filter = {
+        kinds: [KIND_WEBRTC_SIGNAL],
+        '#p': [pubkey],
+        '#d': [documentId],
+        since: Math.floor(Date.now() / 1000) - 60,
+      };
+
+      const sub = pool.subscribeMany(NOSTR_RELAYS, [filter], {
+        onevent: async (event) => {
+          await handleWebRTCSignal(event);
+        },
+      });
+
+      subscriptions.push({ close: () => sub.close() });
+    }
+
+    async function handleWebRTCSignal(event) {
+      if (event.pubkey === pubkey) return;
+
+      try {
+        const decrypted = await nip04.decrypt(secretKey, event.pubkey, event.content);
+        const signal = JSON.parse(decrypted);
+        
+        console.log(`[P2P] Received ${signal.type} from ${event.pubkey.slice(0, 8)}`);
+
+        switch (signal.type) {
+          case 'offer':
+            await handleOffer(event.pubkey, signal.offer);
+            break;
+          case 'answer':
+            await handleAnswer(event.pubkey, signal.answer);
+            break;
+          case 'ice-candidate':
+            await handleIceCandidate(event.pubkey, signal.candidate);
+            break;
+        }
+      } catch (e) {
+        console.warn('[P2P] Failed to process signal', e);
+      }
+    }
+
+    async function handleOffer(remotePubkey, offer) {
+      const peer = await createPeerConnection(remotePubkey, false);
+      await peer.connection.setRemoteDescription(offer);
+      
+      const answer = await peer.connection.createAnswer();
+      await peer.connection.setLocalDescription(answer);
+      
+      await sendWebRTCSignal(remotePubkey, {
+        type: 'answer',
+        answer: answer
+      });
+    }
+
+    async function handleAnswer(remotePubkey, answer) {
+      const peer = peerConnections.get(remotePubkey);
+      if (peer) {
+        await peer.connection.setRemoteDescription(answer);
+      }
+    }
+
+    async function handleIceCandidate(remotePubkey, candidate) {
+      const peer = peerConnections.get(remotePubkey);
+      if (peer) {
+        await peer.connection.addIceCandidate(candidate);
+      }
+    }
+
+    // ========================================================================
+    // Initialize - Nostr discovery + WebRTC P2P
     // ========================================================================
     async function init() {
       documentId = getDocumentId();
       docIdEl.textContent = `#${documentId.slice(0, 8)}`;
-      console.log('[Init] Document ID:', documentId);
+      console.log('[Init] Starting P2P collaborative editor...');
 
       // Initialize Yjs
       doc = new Y.Doc();
@@ -1470,45 +1857,44 @@ ${content}
       localPersistence = new IndexeddbPersistence(`docs-p2p-${documentId}`, doc);
       
       localPersistence.on('synced', () => {
-        console.log('[Local] Loaded from IndexedDB');
+        console.log('[Local] Document loaded from IndexedDB');
         syncYjsToEditor();
       });
 
-      // Sync Yjs changes to editor
+      // Broadcast Yjs updates to P2P peers
+      doc.on('update', broadcastUpdate);
+
+      // Sync Yjs to editor
       yText.observe(() => {
         syncYjsToEditor();
       });
 
-      // Broadcast updates to peers
-      doc.on('update', broadcastUpdate);
-
-      // Initialize Nostr
+      // Initialize Nostr for peer discovery
       try {
         pool = new SimplePool();
         secretKey = generateSecretKey();
         pubkey = getPublicKey(secretKey);
-        console.log(`[Nostr] Local pubkey: ${pubkey.slice(0, 8)}...`);
+        console.log(`[Nostr] Identity: ${pubkey.slice(0, 8)}...`);
 
-        // Subscribe and announce
+        // Subscribe to presence and WebRTC signals
         subscribeToPresence();
-        subscribeToSignaling();
-        await announcePresence();
-
-        // Presence heartbeat
-        presenceTimer = setInterval(announcePresence, 30000);
+        subscribeToWebRTCSignals();
         
-        console.log('[Nostr] Initialized successfully');
+        // Announce our presence
+        await announcePresence();
+        presenceTimer = setInterval(announcePresence, 60000);
+        
+        console.log('[Nostr] Peer discovery active');
       } catch (error) {
-        console.error('[Nostr] Initialization failed:', error);
-        showToast('Fout bij verbinden met netwerk');
+        console.error('[Nostr] Failed to initialize:', error);
       }
 
-      // Update UI
+      // Initial state
       statusDot.className = 'status-dot';
-      statusText.textContent = 'Alleen jij';
+      statusText.textContent = 'Zoekt peers...';
       editorEl.focus();
 
-      console.log('[Init] Ready!');
+      console.log('[Init] Ready - P2P collaborative editor active!');
     }
 
     // Handle hash changes (navigation between documents)
