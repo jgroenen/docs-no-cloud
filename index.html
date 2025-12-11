@@ -659,66 +659,6 @@
       }
     }
 
-    function subscribeToSignaling() {
-      const filter = {
-        kinds: [KIND_ENCRYPTED_DM],
-        '#p': [pubkey],
-        since: Math.floor(Date.now() / 1000) - 120,
-      };
-
-      const sub = pool.subscribeMany(DEFAULT_RELAYS, [filter], {
-        onevent: async (event) => {
-          await handleSignalingEvent(event);
-        },
-      });
-
-      subscriptions.push({ close: () => sub.close() });
-    }
-
-    async function sendSignalingMessage(targetPubkey, message) {
-      try {
-        const encrypted = await nip04.encrypt(secretKey, targetPubkey, JSON.stringify(message));
-        
-        const event = finalizeEvent({
-          kind: KIND_ENCRYPTED_DM,
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [['p', targetPubkey]],
-          content: encrypted,
-        }, secretKey);
-
-        await Promise.any(pool.publish(DEFAULT_RELAYS, event));
-      } catch (e) {
-        console.warn('[Nostr] Failed to send signaling message', e);
-      }
-    }
-
-    async function handleSignalingEvent(event) {
-      if (event.pubkey === pubkey) return;
-
-      try {
-        const decrypted = await nip04.decrypt(secretKey, event.pubkey, event.content);
-        const message = JSON.parse(decrypted);
-
-        if (message.documentId !== documentId) return;
-
-        console.log(`[Nostr] Received ${message.type} from ${event.pubkey.slice(0, 8)}...`);
-
-        switch (message.type) {
-          case 'offer':
-            await handleOffer(event.pubkey, message.payload);
-            break;
-          case 'answer':
-            await handleAnswer(event.pubkey, message.payload);
-            break;
-          case 'ice-candidate':
-            await handleIceCandidate(event.pubkey, message.payload);
-            break;
-        }
-      } catch (e) {
-        console.warn('[Nostr] Failed to process signaling', e);
-      }
-    }
-
     // File Operations
     // ========================================================================
     function openFile() {
