@@ -659,41 +659,6 @@
       }
     }
 
-    async function announcePresence() {
-      try {
-        const event = finalizeEvent({
-          kind: KIND_PRESENCE,
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [
-            ['d', documentId],
-            ['t', `doc-${documentId}`],
-          ],
-          content: JSON.stringify({
-            type: 'join',
-            documentId,
-            pubkey,
-            timestamp: Date.now(),
-          }),
-        }, secretKey);
-
-        console.log('[Nostr] Announcing presence...', event);
-        const results = await Promise.allSettled(pool.publish(DEFAULT_RELAYS, event));
-        const successful = results.filter(r => r.status === 'fulfilled').length;
-        console.log(`[Nostr] Presence announced to ${successful}/${DEFAULT_RELAYS.length} relays`);
-        
-        // Update status if we have at least one working relay
-        if (successful > 0) {
-          statusText.textContent = `Verbonden (${successful} relays)`;
-        } else {
-          statusText.textContent = 'Geen netwerkverbinding';
-          throw new Error('No relays available');
-        }
-      } catch (e) {
-        console.warn('[Nostr] Failed to announce presence', e);
-        statusText.textContent = 'Netwerkfout';
-      }
-    }
-
     function subscribeToPresence() {
       try {
         const filter = {
